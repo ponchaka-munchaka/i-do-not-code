@@ -1,24 +1,88 @@
-# PLACE UNDER YEA - BATTLE ENGINE
 #==============================================================================
-module EBONY
-  module SWAP
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    Vocab = "Swap"
-    Cooldown = 3
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  end
-end
+# Battle Swap 1.0
+# By Ebanyle
 #==============================================================================
 $imported = {} if $imported.nil?
 $imported["EBONY_BattleSwap"] = true
 #==============================================================================
+# Version History (DD/MM/YY)
+# 24/01/23 - v. 1.0 - Release
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# This script allows you to swap members mid-battle. No more lazy backup!
+# You can also set cooldowns and a limit for swaps per battle~
+#==============================================================================
+# Terms of Use
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ 
+# - You may post this anywhere, edited or not;
+# - You may use it in any games, commercial or not;
+# - Credit me as Ebanyle;
+# - Do not remove this header.
+#==============================================================================
+# Thanks
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# Yanfly - For some coding reference
+# Traverse - Snippet fix for adding members mid-battle in TSBS
+#==============================================================================
+# Instructions
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# Paste this script above Main and below Materials, preferably under all battle
+# scripts.
+#==============================================================================
+# Compatibility
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# This script may need some patches with any script that changes the battle
+# HUD or some battle scripts.
+# It is currently (supposed to be) compatible with the following:
+# - Yanfly Engine Ace - Battle Engine
+# - Theolized Sideview Battle System
+#==============================================================================
+# Know issues
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# - If you are using YEA - Battle Engine and have too many members, it might not
+# look good;
+# - If you have a Popup script, it may pop up the Death state when swapping.
+#==============================================================================
+# Configuration
+#==============================================================================
+module EBONY
+  module SWAP
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#   Vocab: Name of the command in battle
+    Vocab = "Swap"       
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#   Cooldown: Amount of turns that command will be inactive after swapping.
+    Cooldown = 1
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#   Max_Uses: Amount of times you can use command per battle.
+#   Set to zero if you don't want to use this option.
+    Max_Uses = 0
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#   Log: Message to appear in the battle log when swapping. 
+#   Names must be set by %s. 1st is the battle member, 2nd the reserve member.
+#   If you don't want a log to appear, simply leave string empty like this: ""
+    Log = "%s swapped places with %s."
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# Configuration for Yanfly Engine Ace - Battle Engine
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ 
+#   Style: Layout of the reserve members window for YEA - Battle Engine. 
+#          Does not affect anything if the aforementioned script is not present.
+#          For Battle Engine, actors will get real squishy if there's too
+#          many of them. Unfortunately there's no scroll option (yet?).
+#
+#   :side    - Reserve window will appear to the side of the party window.
+#              Recommended if you have 1 or 2 reserve members as it is tiny
+#              and any more members than that get REAL squishy.
+#   :default - Reserve window will appear above party window.
+    Style = :side
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ 
+  end
+end
+#==============================================================================
 # ** Game_Troop
-#------------------------------------------------------------------------------
-#  This class handles enemy groups and battle-related data. Also performs
-# battle events. The instance of this class is referenced by $game_troop.
 #==============================================================================
 class Game_Troop
   attr_reader    :swap_cooldown
+  attr_reader    :swap_max
   attr_accessor  :allow_swap
   #--------------------------------------------------------------------------
   # * aliased method: clear
@@ -27,19 +91,23 @@ class Game_Troop
   def clear
       eb_swap_clear
       @swap_cooldown = 0
+      @swap_max = 0
       @allow_swap = false
   end
   #--------------------------------------------------------------------------
   # * new method: apply swap cooldown
   #--------------------------------------------------------------------------
   def apply_swap_cooldown
-    @swap_cooldown = EBONY::SWAP::Cooldown
+    @swap_cooldown = (EBONY::SWAP::Cooldown+1)
+    @swap_max += 1
   end
   #--------------------------------------------------------------------------
   # * new method: allow swap?
   #--------------------------------------------------------------------------
   def allow_swap?
-    if @swap_cooldown != 0 or !$game_party.reserve_exist?
+    if @swap_max == EBONY::SWAP::Max_Uses && EBONY::SWAP::Max_Uses != 0
+      @allow_swap = false 
+    elsif @swap_cooldown != 0 or !$game_party.reserve_exist?
       @allow_swap = false
     else
       @allow_swap = true
@@ -57,18 +125,9 @@ end # Game_Troop
 
 #==============================================================================
 # ** Game_Party
-#------------------------------------------------------------------------------
-#  This class handles parties. Information such as gold and items is included.
-# Instances of this class are referenced by $game_party.
 #==============================================================================
 
 class Game_Party
-  #--------------------------------------------------------------------------
-  # * overwrite method: Get Maximum Number of Battle Members
-  #--------------------------------------------------------------------------
-  def max_battle_members
-    return 3
-  end
   #--------------------------------------------------------------------------
   # * new method: reserve amount
   #--------------------------------------------------------------------------
@@ -79,6 +138,7 @@ class Game_Party
   # * new method: reserve members
   #--------------------------------------------------------------------------
   def reserve_members
+    return if all_members.size < max_battle_members
     all_members[max_battle_members, reserve_amount].select {|actor| actor.exist? }
   end
   #--------------------------------------------------------------------------
@@ -91,9 +151,6 @@ end # Game_Party
 
 #==============================================================================
 # ** Window_ReserveActor
-#------------------------------------------------------------------------------
-#  This window is for displaying the status of reserve members on the battle
-# screen.
 #==============================================================================
 
 class Window_ReserveActor < Window_BattleStatus
@@ -102,38 +159,43 @@ class Window_ReserveActor < Window_BattleStatus
   #--------------------------------------------------------------------------
   def initialize
     super()
-    self.x = (Graphics.width - width)
+    self.x = Graphics.width - width
     self.visible = false
     self.openness = 255
   end
   #--------------------------------------------------------------------------
-  # * Show Window
+  # * Activate Window
   #--------------------------------------------------------------------------
-  def show
-      select(0)
+  def activate
+    select(0)
     super
   end
   #--------------------------------------------------------------------------
   # * Get Number of Items
   #--------------------------------------------------------------------------
   def item_max
-    $game_party.reserve_members.size
+    if $game_party.all_members.size > $game_party.max_battle_members
+      return $game_party.reserve_members.size
+    else
+      super
+    end
   end
   #--------------------------------------------------------------------------
   # * Draw Item
   #--------------------------------------------------------------------------
   def draw_item(index)
-    actor = $game_party.reserve_members[index]
-    draw_basic_area(basic_area_rect(index), actor)
-    draw_gauge_area(gauge_area_rect(index), actor)
+    if $game_party.all_members.size > $game_party.max_battle_members
+      actor = $game_party.reserve_members[index]
+      draw_basic_area(basic_area_rect(index), actor)
+      draw_gauge_area(gauge_area_rect(index), actor)
+    else
+      super
+    end
   end
 end  # Window_ReserveActor
 
 #==============================================================================
 # ** Window_PartyCommand
-#------------------------------------------------------------------------------
-#  This window is used to select whether to fight or escape on the battle
-# screen.
 #==============================================================================
 
 class Window_PartyCommand < Window_Command
@@ -148,9 +210,21 @@ class Window_PartyCommand < Window_Command
 end
 
 #==============================================================================
+# ** Window_BattleLog
+#==============================================================================
+
+class Window_BattleLog < Window_Selectable
+  #--------------------------------------------------------------------------
+  # * new method: Display Swap
+  #--------------------------------------------------------------------------
+  def display_swap(target,subject)
+    add_text(sprintf(EBONY::SWAP::Log, target, subject))
+    wait
+  end
+end # Window_BattleLog
+
+#==============================================================================
 # ** Scene_Battle
-#------------------------------------------------------------------------------
-#  This class performs battle screen processing.
 #==============================================================================
 
 class Scene_Battle
@@ -161,6 +235,7 @@ class Scene_Battle
   def create_all_windows
     eb_swap_create_all_windows
     create_reserve_window
+    create_swap_actor_window
   end
   #--------------------------------------------------------------------------
   # * new method: create Reserve Window
@@ -169,7 +244,16 @@ class Scene_Battle
     @reserve_window = Window_ReserveActor.new
     @reserve_window.set_handler(:ok,     method(:on_reserve_ok))
     @reserve_window.set_handler(:cancel, method(:on_reserve_cancel))
-    @reserve_window.y = (Graphics.height - @reserve_window.height) #@party_command_window.height
+    oy = Graphics.height - @reserve_window.height - @status_window.height
+    @reserve_window.y = oy
+  end
+  #--------------------------------------------------------------------------
+  # * new method: Create Swap Actor Window
+  #--------------------------------------------------------------------------
+  def create_swap_actor_window
+    @swap_actor_window = Window_BattleActor.new(@info_viewport)
+    @swap_actor_window.set_handler(:ok,     method(:on_s_actor_ok))
+    @swap_actor_window.set_handler(:cancel, method(:on_s_actor_cancel))
   end
   #--------------------------------------------------------------------------
   # * aliased method: Create Party Commands Window
@@ -183,11 +267,18 @@ class Scene_Battle
   # * new method: process swap
   #--------------------------------------------------------------------------
   def process_swap
-    bm = @actor_window.index
+    bm = @swap_actor_window.index
     rm = @reserve_window.index + $game_party.max_battle_members
     $game_party.swap_order(bm, rm)
     $game_party.make_actions
     $game_troop.apply_swap_cooldown
+    refresh_status
+    @status_window.show
+    unless (EBONY::SWAP::Log).empty?
+      @log_window.display_swap(bmn,rmn)
+      @log_window.wait
+      @log_window.clear
+    end
   end
   #--------------------------------------------------------------------------
   # * new method: Reserve actor [OK]
@@ -195,9 +286,9 @@ class Scene_Battle
   def on_reserve_ok
     process_swap
     refresh_status
-    @actor_window.refresh
+    @swap_actor_window.refresh
     @reserve_window.hide
-    @actor_window.hide
+    @swap_actor_window.hide
     @party_command_window.refresh
     @party_command_window.activate
   end
@@ -205,30 +296,47 @@ class Scene_Battle
   # * new method: Reserve actor [Cancel]
   #--------------------------------------------------------------------------
   def on_reserve_cancel
-    @actor_window.refresh
-    @actor_window.activate
+    @swap_actor_window.refresh
+    @swap_actor_window.activate
+    @reserve_window.unselect
   end
   #--------------------------------------------------------------------------
   # * new method: process direct swap
   #--------------------------------------------------------------------------
   def process_direct_swap
-    $game_party.swap_order(@actor_window.index,$game_party.max_battle_members)
+    bm = @swap_actor_window.index
+    bmn = $game_party.members[@swap_actor_window.index].name
+    rm = $game_party.max_battle_members
+    $game_party.swap_order(bm,rm)
     $game_party.make_actions
     $game_troop.apply_swap_cooldown
-    refresh_status
-    @actor_window.refresh
+    @swap_actor_window.refresh
     @reserve_window.hide
-    @actor_window.hide
+    @swap_actor_window.hide
     @party_command_window.refresh
-    @party_command_window.activate
+    @party_command_window.show.activate
+    refresh_status
+    @status_window.show
+    rmn = $game_party.members[bm].name
+    unless (EBONY::SWAP::Log).empty?
+      @log_window.display_swap(bmn,rmn)
+      @log_window.wait
+      @log_window_clear
+    end
   end
   #--------------------------------------------------------------------------
   # * new method: Command Swap
   #--------------------------------------------------------------------------  
   def command_swap
-    BattleManager.reset_actor
-    select_actor_selection
+    select_s_actor_selection
     @reserve_window.refresh && @reserve_window.show
+  end
+  #--------------------------------------------------------------------------
+  # * new method: Start Swap Actor Selection
+  #--------------------------------------------------------------------------
+  def select_s_actor_selection
+    @swap_actor_window.refresh
+    @swap_actor_window.show.activate
   end
   #--------------------------------------------------------------------------
   # * new metod: start reserve selection (unused?)
@@ -237,65 +345,46 @@ class Scene_Battle
     @reserve_window.activate
   end
   #--------------------------------------------------------------------------
-  # * aliased metod: Actor [OK]
+  # * new metod: Swap Actor [OK]
   #--------------------------------------------------------------------------
-  alias eb_swap_on_actor_ok on_actor_ok
-  def on_actor_ok
-    if @party_command_window.current_symbol == :swap
-      if $game_party.reserve_amount != 1
-        @reserve_window.activate
-      else
-        process_direct_swap
-      end
+  def on_s_actor_ok
+    if $game_party.reserve_amount != 1
+      @reserve_window.activate
     else
-      eb_swap_on_actor_ok
+      process_direct_swap
     end
   end  
   #--------------------------------------------------------------------------
-  # * aliased method: Actor [Cancel]
+  # * new method: Swap Actor [Cancel]
   #--------------------------------------------------------------------------
-  alias eb_swap_on_actor_cancel on_actor_cancel
-  def on_actor_cancel
-    if @party_command_window.current_symbol == :swap
-      @party_command_window.refresh
-      @party_command_window.activate
-      @reserve_window.hide
-    end
-    eb_swap_on_actor_cancel 
+  def on_s_actor_cancel
+    @party_command_window.refresh
+    @party_command_window.activate
+    @swap_actor_window.hide
+    @reserve_window.hide
   end
-end
-#==============================================================================
-# ** BattleManager
-#------------------------------------------------------------------------------
-#  This module manages battle progress.
-#==============================================================================
-module BattleManager
-  #--------------------------------------------------------------------------
-  # * new method: reset_actor
-  #--------------------------------------------------------------------------
-  def self.reset_actor
-    @actor_index = 1
-  end
-end # BattleManager
+end # Scene_Battle
 
 if $imported["YEA-BattleEngine"]
 #==============================================================================
 # ** Window_ReserveActor
-#------------------------------------------------------------------------------
-#  This window is for displaying the status of reserve members on the battle
-# screen.
 #==============================================================================
 
 class Window_ReserveActor < Window_BattleStatus
   #--------------------------------------------------------------------------
   # overwrite method: col_max
   #--------------------------------------------------------------------------
-  def col_max; return $game_party.reserve_amount; end
+  def col_max
+    if $game_party.reserve_amount == 0
+      return 1
+    else
+      return $game_party.reserve_amount
+    end
+  end
   #--------------------------------------------------------------------------
   # new method: battle_members
   #--------------------------------------------------------------------------
   def battle_members; return $game_party.reserve_members; end
-  
   #--------------------------------------------------------------------------
   # new method: actor
   #--------------------------------------------------------------------------
@@ -305,7 +394,7 @@ class Window_ReserveActor < Window_BattleStatus
   #--------------------------------------------------------------------------
   def item_rect(index)
     rect = Rect.new
-    rect.width = contents.width / $game_party.reserve_amount
+    rect.width = contents.width / col_max
     rect.height = contents.height
     rect.x = index * rect.width
     if YEA::BATTLE::BATTLESTATUS_CENTER_FACES
@@ -314,11 +403,9 @@ class Window_ReserveActor < Window_BattleStatus
     rect.y = 0
     return rect
   end
-  
   #--------------------------------------------------------------------------
   # overwrite method: draw_item
   #--------------------------------------------------------------------------
-  # Tenho que deixar isso aqui pq se nao da erro no actor sei la pq eu sou burra
   def draw_item(index)
     return if index.nil?
     clear_item(index)
@@ -326,8 +413,7 @@ class Window_ReserveActor < Window_BattleStatus
     rect = item_rect(index)
     return if actor.nil?
     draw_actor_face(actor, rect.x+2, rect.y+2, actor.alive?)
-    draw_actor_name(actor, rect.x, rect.y, rect.width-8)
-    draw_actor_action(actor, rect.x, rect.y)
+    draw_actor_name(actor, rect.x-20, rect.y, rect.width+12)
     draw_actor_icons(actor, rect.x, line_height*1, rect.width)
     gx = YEA::BATTLE::BATTLESTATUS_HPGAUGE_Y_PLUS
     contents.font.size = YEA::BATTLE::BATTLESTATUS_TEXT_FONT_SIZE
@@ -348,28 +434,57 @@ class Window_ReserveActor < Window_BattleStatus
   # * Get Window Width
   #--------------------------------------------------------------------------
   def window_width
-    128 * col_max
+    if EBONY::SWAP::Style == :side
+      return 128
+    else
+      super
+    end
   end
 end # Window_ReserveActor
 
 class Scene_Battle
   #--------------------------------------------------------------------------
+  # * new method: window_side?
+  #--------------------------------------------------------------------------
+  def window_side?
+    EBONY::SWAP::Style == :side
+  end
+  #--------------------------------------------------------------------------
+  # * overwrite method: create Reserve Window
+  #--------------------------------------------------------------------------
+  def create_reserve_window
+    @reserve_window = Window_ReserveActor.new
+    @reserve_window.set_handler(:ok,     method(:on_reserve_ok))
+    @reserve_window.set_handler(:cancel, method(:on_reserve_cancel))
+    oy = Graphics.height - @reserve_window.height
+    oy = oy - @party_command_window.height unless window_side?
+    @reserve_window.y = oy
+  end
+  #--------------------------------------------------------------------------
+  # * overwrite method: Create Swap Actor Window
+  #--------------------------------------------------------------------------
+  def create_swap_actor_window
+    @swap_actor_window = Window_BattleActor.new(@info_viewport)
+    @swap_actor_window.set_handler(:ok,     method(:on_s_actor_ok))
+    @swap_actor_window.set_handler(:cancel, method(:on_s_actor_cancel))
+    @swap_actor_window.x = @party_command_window.width unless window_side?
+  end
+  #--------------------------------------------------------------------------
   # * new method: hide windows on swap
   #--------------------------------------------------------------------------
   def hide_windows_on_swap
-    if @party_command_window.current_symbol == :swap
-      @help_window.hide
-      refresh_status
-      @status_window.show
-    end
+    @help_window.hide
+    refresh_status
+    @status_window.show
   end
   #--------------------------------------------------------------------------
-  # * aliased method: Actor [Cancel]
+  # * aliased method: Swap Actor [Cancel]
   #--------------------------------------------------------------------------
-  alias eb_yeab_swap_on_actor_cancel on_actor_cancel
-  def on_actor_cancel
-    eb_yeab_swap_on_actor_cancel
+  alias yeab_on_s_actor_cancel on_s_actor_cancel
+  def on_s_actor_cancel
+    yeab_on_s_actor_cancel
     hide_windows_on_swap
+    @party_command_window.show.activate 
   end
   #--------------------------------------------------------------------------
   # * aliased method: Reserve [OK]
@@ -377,6 +492,7 @@ class Scene_Battle
   alias eb_yeab_swap_on_reserve_ok on_reserve_ok
   def on_reserve_ok
     eb_yeab_swap_on_reserve_ok
+    @party_command_window.show.activate 
     hide_windows_on_swap
   end
   #--------------------------------------------------------------------------
@@ -387,19 +503,41 @@ class Scene_Battle
     eb_yeab_process_direct_swap
     hide_windows_on_swap
   end
+  #--------------------------------------------------------------------------
+  # * aliased method: command swap
+  #--------------------------------------------------------------------------
+  alias eb_yeab_command_swap command_swap
+  def command_swap
+    eb_yeab_command_swap
+    @party_command_window.hide if window_side?
+    @status_window.hide
+  end
 end # Scene_Battle
-#==============================================================================#
+
+#==============================================================================
 end # Imported
 
-# Idealmente fazer a janela de seleção de reserva scrollable. Eu vou fazer? Não.
-# Mas fica ai a intenção se eu soubesse fazer...
-# ACHAR UM JEITO DE FAZER ESSA WINDOW_BATTLEACTOR DOS INFERNOS SE MEXER
-# ^ Caso eu não consiga mexer essa porra, modificar a window nova para ser
-# vertical e preencher o espaço dessa battleactor???
-# nah vai dar merda
-# Arrumar exibição de nomes adicionados no meio da batalha
-# Colocar log de swap?
-# Adicionar last resort
-# Arrumar compatibilidade com TSBS
-# Dar um jeito de me livrar essa buceta de BattleManager.actor se nao eu vou ter
-# que criar compatibility patch pra Deus e meio mundo
+if $imported[:TSBS]
+#==============================================================================
+# ** Game_Party
+#==============================================================================
+
+class Game_Party
+  #--------------------------------------------------------------------------
+  # * aliased method: Change Order
+  #--------------------------------------------------------------------------
+  alias eb_tsbs_swap_order swap_order
+  def swap_order(index1, index2)
+    eb_tsbs_swap_order(index1, index2)
+    SceneManager.scene.spriteset.actor_sprites.each_index { |i|
+        sprite = SceneManager.scene.spriteset.actor_sprites[i]
+        mem = $game_party.battle_members[i] ; return unless mem
+        if sprite.battler.nil? || sprite.battler != mem
+          mem.init_oripost ; mem.reset_pos(1) ; mem.battle_phase = :idle
+        end
+      }
+      SceneManager.scene.spriteset.update
+  end
+end # Game_Party
+#==============================================================================
+end # Imported
