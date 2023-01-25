@@ -9,7 +9,12 @@ $imported["EBONY_BattleSwap"] = true
 # 24/01/23 - v. 1.0 - Release
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # This script allows you to swap members mid-battle. No more lazy backup!
-# You can also set cooldowns and a limit for swaps per battle~
+# You can also set cooldowns and a limit for swaps per battle.
+#==============================================================================
+# Instructions
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# Paste this script above Main and below Materials, preferably under all battle
+# scripts.
 #==============================================================================
 # Terms of Use
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ 
@@ -23,15 +28,10 @@ $imported["EBONY_BattleSwap"] = true
 # Yanfly - For some coding reference
 # Traverse - Snippet fix for adding members mid-battle in TSBS
 #==============================================================================
-# Instructions
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# Paste this script above Main and below Materials, preferably under all battle
-# scripts.
-#==============================================================================
 # Compatibility
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # This script may need some patches with any script that changes the battle
-# HUD or some battle scripts.
+# scene, including HUDs, ATB, etc.
 # It is currently (supposed to be) compatible with the following:
 # - Yanfly Engine Ace - Battle Engine
 # - Theolized Sideview Battle System
@@ -48,19 +48,21 @@ module EBONY
   module SWAP
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   Vocab: Name of the command in battle
-    Vocab = "Swap"       
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    Vocab = "Swap"      
+#
 #   Cooldown: Amount of turns that command will be inactive after swapping.
-    Cooldown = 1
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#   Set to zero if you don't want to use this option.
+    Cooldown = 2
+#
 #   Max_Uses: Amount of times you can use command per battle.
 #   Set to zero if you don't want to use this option.
-    Max_Uses = 0
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    Max_Uses = 3
+#
 #   Log: Message to appear in the battle log when swapping. 
 #   Names must be set by %s. 1st is the battle member, 2nd the reserve member.
 #   If you don't want a log to appear, simply leave string empty like this: ""
     Log = "%s swapped places with %s."
+#
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # Configuration for Yanfly Engine Ace - Battle Engine
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ 
@@ -98,8 +100,11 @@ class Game_Troop
   # * new method: apply swap cooldown
   #--------------------------------------------------------------------------
   def apply_swap_cooldown
-    @swap_cooldown = (EBONY::SWAP::Cooldown+1)
-    @swap_max += 1
+    unless EBONY::SWAP::Cooldown == 0
+      @swap_cooldown = (EBONY::SWAP::Cooldown)
+      @swap_max += 1
+      p @swap_cooldown
+    end
   end
   #--------------------------------------------------------------------------
   # * new method: allow swap?
@@ -128,6 +133,50 @@ end # Game_Troop
 #==============================================================================
 
 class Game_Party
+  attr_accessor :dead_reserve_members
+  attr_accessor :after_swap_dead_members
+  #--------------------------------------------------------------------------
+  # * alias method: initalize
+  #--------------------------------------------------------------------------
+  alias eb_swap_initialize initialize
+  def initialize
+    eb_swap_initialize
+    @dead_reserve_members = []
+  end
+  #--------------------------------------------------------------------------
+  # * new method: last resort
+  #--------------------------------------------------------------------------
+  def last_resort
+    all_dead? && reserve_exist? && !reserve_all_dead?
+  end
+  #--------------------------------------------------------------------------
+  # * new method: reserve_all_dead?
+  #--------------------------------------------------------------------------  
+  def reserve_all_dead?
+    return if reserve_members == nil
+    dead_reserve_members.size == reserve_members.size 
+  end
+  #--------------------------------------------------------------------------
+  # * Get Array of Incapacitated Reserve Members
+  #--------------------------------------------------------------------------
+  def dead_reserve_members
+    unless reserve_members == nil
+      @dead_reserve_members = reserve_members.select {|member| member.dead? } 
+    end
+  end
+  #--------------------------------------------------------------------------
+  # * new method: party_will_be_dead?
+  #--------------------------------------------------------------------------
+  def party_will_be_dead?(battle_member,reserve_member)
+    party_after_swap = members.map { |member| member }
+    party_after_swap[battle_member] = all_members[reserve_member]
+    @after_swap_dead_members = party_after_swap.select {|member| member.dead? }
+    if @after_swap_dead_members.size == members.size
+      return true
+    else
+      return false
+    end
+  end
   #--------------------------------------------------------------------------
   # * new method: reserve amount
   #--------------------------------------------------------------------------
@@ -219,7 +268,7 @@ class Window_BattleLog < Window_Selectable
   #--------------------------------------------------------------------------
   def display_swap(target,subject)
     add_text(sprintf(EBONY::SWAP::Log, target, subject))
-    wait
+    wait if line_number > 0
   end
 end # Window_BattleLog
 
@@ -236,6 +285,7 @@ class Scene_Battle
     eb_swap_create_all_windows
     create_reserve_window
     create_swap_actor_window
+    create_dactor_window
   end
   #--------------------------------------------------------------------------
   # * new method: create Reserve Window
@@ -264,64 +314,130 @@ class Scene_Battle
     @party_command_window.set_handler(:swap, method(:command_swap))
   end
   #--------------------------------------------------------------------------
-  # * new method: process swap
+  # * new method: Create Dead Actor Window
   #--------------------------------------------------------------------------
-  def process_swap
-    bm = @swap_actor_window.index
-    rm = @reserve_window.index + $game_party.max_battle_members
-    $game_party.swap_order(bm, rm)
-    $game_party.make_actions
-    $game_troop.apply_swap_cooldown
-    refresh_status
-    @status_window.show
-    unless (EBONY::SWAP::Log).empty?
-      @log_window.display_swap(bmn,rmn)
-      @log_window.wait
-      @log_window.clear
-    end
+  def create_dactor_window
+    @dactor_window = Window_BattleActor.new(@info_viewport)
+    @dactor_window.set_handler(:ok,     method(:on_dactor_ok))
+  end
+  #--------------------------------------------------------------------------
+  # * new method: on_dactor_ok
+  #--------------------------------------------------------------------------
+  def on_dactor_ok
+    on_s_actor_ok
+  end
+  #--------------------------------------------------------------------------
+  # * aliased method: Processing at End of Action
+  #--------------------------------------------------------------------------
+  alias eb_swap_process_action_end process_action_end
+  def process_action_end
+    apply_last_resort if $game_party.last_resort
+    eb_swap_process_action_end
+  end
+  #--------------------------------------------------------------------------
+  # * new method: apply last resort
+  #--------------------------------------------------------------------------
+  def apply_last_resort
+    @dactor_window.refresh
+    @dactor_window.show.activate
+    @status_window.hide
+    @reserve_window.refresh
+    @reserve_window.show
+    @reserve_window.unselect
   end
   #--------------------------------------------------------------------------
   # * new method: Reserve actor [OK]
   #--------------------------------------------------------------------------
   def on_reserve_ok
-    process_swap
-    refresh_status
-    @swap_actor_window.refresh
-    @reserve_window.hide
-    @swap_actor_window.hide
-    @party_command_window.refresh
-    @party_command_window.activate
+    if check_for_disallow_swap_process
+      disallow_swap_process
+    else
+      process_swap
+    end
+  end
+  #--------------------------------------------------------------------------
+  # * new metod: Check if to Disallow Swap Process
+  #--------------------------------------------------------------------------
+  def check_for_disallow_swap_process
+    bm = battle_member_to_swap
+    rm = reserve_member_to_swap
+    bmd = both_members_dead?
+    ald = $game_party.all_dead?
+    return true if $game_party.party_will_be_dead?(bm,rm) or bmd && ald
+  end
+  #--------------------------------------------------------------------------
+  # * new method: disallow swap process
+  #--------------------------------------------------------------------------
+  def disallow_swap_process
+    Sound.play_buzzer
+    $game_party.reserve_amount != 1 ? w = @reserve_window : w = @swap_actor_window
+    i = w.index
+    w.refresh
+    w.activate
+    w.select(i)
   end
   #--------------------------------------------------------------------------
   # * new method: Reserve actor [Cancel]
   #--------------------------------------------------------------------------
   def on_reserve_cancel
-    @swap_actor_window.refresh
-    @swap_actor_window.activate
+    if !$game_party.last_resort
+      @swap_actor_window.refresh
+      @swap_actor_window.activate
+    else
+      @dactor_window.refresh
+      @dactor_window.activate
+    end
     @reserve_window.unselect
+  end
+  #--------------------------------------------------------------------------
+  # * new method: both_members_dead?
+  #--------------------------------------------------------------------------
+  def both_members_dead?
+    bm = $game_party.members[battle_member_to_swap]
+    rm = $game_party.reserve_members[@reserve_window.index]
+    return true if bm.dead? && rm.dead?
+  end
+  #--------------------------------------------------------------------------
+  # * new method: battle_member_to_swap
+  #--------------------------------------------------------------------------
+  def battle_member_to_swap
+    if $game_party.last_resort
+      return @dactor_window.index
+    else
+      return @swap_actor_window.index
+    end
+  end
+  #--------------------------------------------------------------------------
+  # * new method: reserve_member_to_swap
+  #--------------------------------------------------------------------------
+  def reserve_member_to_swap
+    ra = $game_party.reserve_amount 
+    mxb = $game_party.max_battle_members
+    if ra != 1
+      return mxb + @reserve_window.index
+    else
+      return mxb
+    end
   end
   #--------------------------------------------------------------------------
   # * new method: process direct swap
   #--------------------------------------------------------------------------
-  def process_direct_swap
-    bm = @swap_actor_window.index
-    bmn = $game_party.members[@swap_actor_window.index].name
-    rm = $game_party.max_battle_members
-    $game_party.swap_order(bm,rm)
-    $game_party.make_actions
+  def process_swap
     $game_troop.apply_swap_cooldown
-    @swap_actor_window.refresh
+    rmn = $game_party.reserve_members[@reserve_window.index].name
+    bmn = $game_party.members[battle_member_to_swap].name
     @reserve_window.hide
     @swap_actor_window.hide
-    @party_command_window.refresh
-    @party_command_window.show.activate
-    refresh_status
+    @dactor_window.hide
     @status_window.show
-    rmn = $game_party.members[bm].name
+    start_party_command_selection
+    $game_party.swap_order(battle_member_to_swap,reserve_member_to_swap)
+    $game_party.make_actions
+    refresh_status
     unless (EBONY::SWAP::Log).empty?
-      @log_window.display_swap(bmn,rmn)
-      @log_window.wait
-      @log_window_clear
+      @party_command_window.show
+      @log_window.display_swap(rmn,bmn)
+      @log_window.wait_and_clear
     end
   end
   #--------------------------------------------------------------------------
@@ -329,7 +445,7 @@ class Scene_Battle
   #--------------------------------------------------------------------------  
   def command_swap
     select_s_actor_selection
-    @reserve_window.refresh && @reserve_window.show
+    @reserve_window.refresh && @reserve_window.show && @reserve_window.unselect
   end
   #--------------------------------------------------------------------------
   # * new method: Start Swap Actor Selection
@@ -351,7 +467,7 @@ class Scene_Battle
     if $game_party.reserve_amount != 1
       @reserve_window.activate
     else
-      process_direct_swap
+      check_for_disallow_swap_process ? disallow_swap_process : process_swap
     end
   end  
   #--------------------------------------------------------------------------
@@ -363,7 +479,24 @@ class Scene_Battle
     @swap_actor_window.hide
     @reserve_window.hide
   end
+
 end # Scene_Battle
+
+class << BattleManager
+  #--------------------------------------------------------------------------
+  # * overwrite: Determine Win/Loss Results
+  #--------------------------------------------------------------------------
+  alias eb_swap_judge_win_loss judge_win_loss
+  def judge_win_loss
+    if $game_party.last_resort
+      turn_end
+      @phase = :input
+      return 
+    else
+      eb_swap_judge_win_loss
+    end
+  end
+end # BattleManager
 
 if $imported["YEA-BattleEngine"]
 #==============================================================================
@@ -470,6 +603,23 @@ class Scene_Battle
     @swap_actor_window.x = @party_command_window.width unless window_side?
   end
   #--------------------------------------------------------------------------
+  # * overwrite method: Create Dead Actor Window
+  #--------------------------------------------------------------------------
+  def create_dactor_window
+    @dactor_window = Window_BattleActor.new(@info_viewport)
+    @dactor_window.set_handler(:ok,     method(:on_dactor_ok))
+    @dactor_window.x = (@party_command_window.width / 2) if !window_side?
+  end
+  #--------------------------------------------------------------------------
+  # * alias method: apply last resort
+  #--------------------------------------------------------------------------
+  alias eb_yeab_apply_last_resort apply_last_resort
+  def apply_last_resort
+    eb_yeab_apply_last_resort
+    @party_command_window.show if !window_side?
+    @reserve_window.x = @dactor_window.x if !window_side? && $game_party.last_resort
+  end
+  #--------------------------------------------------------------------------
   # * new method: hide windows on swap
   #--------------------------------------------------------------------------
   def hide_windows_on_swap
@@ -492,15 +642,17 @@ class Scene_Battle
   alias eb_yeab_swap_on_reserve_ok on_reserve_ok
   def on_reserve_ok
     eb_yeab_swap_on_reserve_ok
-    @party_command_window.show.activate 
-    hide_windows_on_swap
+#~     unless disallow_swap_process
+#~       @party_command_window.show.activate
+#~       hide_windows_on_swap
+#~     end
   end
   #--------------------------------------------------------------------------
   # * aliased method: process direct swap
   #--------------------------------------------------------------------------
-  alias eb_yeab_process_direct_swap process_direct_swap
-  def process_direct_swap
-    eb_yeab_process_direct_swap
+  alias eb_yeab_process_swap process_swap
+  def process_swap
+    eb_yeab_process_swap
     hide_windows_on_swap
   end
   #--------------------------------------------------------------------------
@@ -511,6 +663,18 @@ class Scene_Battle
     eb_yeab_command_swap
     @party_command_window.hide if window_side?
     @status_window.hide
+    @reserve_window.x = @party_command_window.width if !window_side?
+  end
+  #--------------------------------------------------------------------------
+  # * aliased method: disallow swap process
+  #--------------------------------------------------------------------------
+  alias eb_yeab_disallow_swap_process disallow_swap_process
+  def disallow_swap_process
+    eb_yeab_disallow_swap_process  
+#~     @reserve_window.hide
+#~     @swap_actor_window.hide
+#~     @dactor_window.hide
+#~     $game_party.last_resort ? @swap_actor_window.hide : @dactor_window.hide
   end
 end # Scene_Battle
 
