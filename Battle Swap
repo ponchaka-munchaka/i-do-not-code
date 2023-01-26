@@ -681,14 +681,16 @@ class Game_Party
   alias eb_tsbs_swap_order swap_order
   def swap_order(index1, index2)
     eb_tsbs_swap_order(index1, index2)
-    SceneManager.scene.spriteset.actor_sprites.each_index { |i|
-        sprite = SceneManager.scene.spriteset.actor_sprites[i]
-        mem = $game_party.battle_members[i] ; return unless mem
-        if sprite.battler.nil? || sprite.battler != mem
-          mem.init_oripost ; mem.reset_pos(1) ; mem.battle_phase = :idle
-        end
-      }
-      SceneManager.scene.spriteset.update
+    if SceneManager.scene_is?(Scene_Battle)
+      SceneManager.scene.spriteset.actor_sprites.each_index { |i|
+          sprite = SceneManager.scene.spriteset.actor_sprites[i]
+          mem = $game_party.battle_members[i] ; return unless mem
+          if sprite.battler.nil? || sprite.battler != mem
+            mem.init_oripost ; mem.reset_pos(1) ; mem.battle_phase = :idle
+          end
+        }
+        SceneManager.scene.spriteset.update
+    end
   end
 end # Game_Party
 #==============================================================================
