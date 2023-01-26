@@ -75,7 +75,7 @@ module EBONY
 #              Recommended if you have 1 or 2 reserve members as it is tiny
 #              and any more members than that get REAL squishy.
 #   :default - Reserve window will appear above party window.
-    Style = :side
+    Style = :default
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ 
   end
 end
@@ -103,7 +103,6 @@ class Game_Troop
     unless EBONY::SWAP::Cooldown == 0
       @swap_cooldown = (EBONY::SWAP::Cooldown)
       @swap_max += 1
-      p @swap_cooldown
     end
   end
   #--------------------------------------------------------------------------
@@ -187,9 +186,9 @@ class Game_Party
   # * new method: reserve members
   #--------------------------------------------------------------------------
   def reserve_members
-    return if all_members.size < max_battle_members
+    return [] if all_members.size < max_battle_members
     all_members[max_battle_members, reserve_amount].select {|actor| actor.exist? }
-  end
+  end 
   #--------------------------------------------------------------------------
   # * new method: reserve_exist?
   #--------------------------------------------------------------------------
@@ -200,6 +199,7 @@ end # Game_Party
 
 #==============================================================================
 # ** Window_ReserveActor
+#  Window for showing party that is currently not in battle.
 #==============================================================================
 
 class Window_ReserveActor < Window_BattleStatus
@@ -319,6 +319,7 @@ class Scene_Battle
   def create_dactor_window
     @dactor_window = Window_BattleActor.new(@info_viewport)
     @dactor_window.set_handler(:ok,     method(:on_dactor_ok))
+    @dactor_window.x = (@party_command_window.width / 2)
   end
   #--------------------------------------------------------------------------
   # * new method: on_dactor_ok
@@ -499,16 +500,17 @@ class << BattleManager
 end # BattleManager
 
 if $imported["YEA-BattleEngine"]
+
 #==============================================================================
 # ** Window_ReserveActor
 #==============================================================================
 
-class Window_ReserveActor < Window_BattleStatus
+class Window_ReserveActor < Window_BattleStatus  
   #--------------------------------------------------------------------------
   # overwrite method: col_max
   #--------------------------------------------------------------------------
   def col_max
-    if $game_party.reserve_amount == 0
+    if $game_party.reserve_members.empty?
       return 1
     else
       return $game_party.reserve_amount
@@ -518,20 +520,21 @@ class Window_ReserveActor < Window_BattleStatus
   # new method: battle_members
   #--------------------------------------------------------------------------
   def battle_members; return $game_party.reserve_members; end
+  
   #--------------------------------------------------------------------------
   # new method: actor
   #--------------------------------------------------------------------------
-  def actor; return reserve_members[@index]; end
+  def actor; return battle_members[@index]; end
   #--------------------------------------------------------------------------
   # overwrite method: item_rect
   #--------------------------------------------------------------------------
   def item_rect(index)
     rect = Rect.new
-    rect.width = contents.width / col_max
+    rect.width = [[128, contents.width / col_max].min,0].max
     rect.height = contents.height
     rect.x = index * rect.width
     if YEA::BATTLE::BATTLESTATUS_CENTER_FACES
-      rect.x += (contents.width - $game_party.members.size * rect.width) / 2
+      rect.x += (contents.width - $game_party.reserve_amount * rect.width) / 2
     end
     rect.y = 0
     return rect
@@ -546,7 +549,7 @@ class Window_ReserveActor < Window_BattleStatus
     rect = item_rect(index)
     return if actor.nil?
     draw_actor_face(actor, rect.x+2, rect.y+2, actor.alive?)
-    draw_actor_name(actor, rect.x-20, rect.y, rect.width+12)
+    draw_actor_name(actor, rect.x-20, rect.y, rect.width)
     draw_actor_icons(actor, rect.x, line_height*1, rect.width)
     gx = YEA::BATTLE::BATTLESTATUS_HPGAUGE_Y_PLUS
     contents.font.size = YEA::BATTLE::BATTLESTATUS_TEXT_FONT_SIZE
@@ -637,17 +640,6 @@ class Scene_Battle
     @party_command_window.show.activate 
   end
   #--------------------------------------------------------------------------
-  # * aliased method: Reserve [OK]
-  #--------------------------------------------------------------------------
-  alias eb_yeab_swap_on_reserve_ok on_reserve_ok
-  def on_reserve_ok
-    eb_yeab_swap_on_reserve_ok
-#~     unless disallow_swap_process
-#~       @party_command_window.show.activate
-#~       hide_windows_on_swap
-#~     end
-  end
-  #--------------------------------------------------------------------------
   # * aliased method: process direct swap
   #--------------------------------------------------------------------------
   alias eb_yeab_process_swap process_swap
@@ -671,10 +663,6 @@ class Scene_Battle
   alias eb_yeab_disallow_swap_process disallow_swap_process
   def disallow_swap_process
     eb_yeab_disallow_swap_process  
-#~     @reserve_window.hide
-#~     @swap_actor_window.hide
-#~     @dactor_window.hide
-#~     $game_party.last_resort ? @swap_actor_window.hide : @dactor_window.hide
   end
 end # Scene_Battle
 
