@@ -637,7 +637,7 @@ class Scene_Battle
   def on_s_actor_cancel
     yeab_on_s_actor_cancel
     hide_windows_on_swap
-    @party_command_window.show.activate 
+    @party_command_window.show 
   end
   #--------------------------------------------------------------------------
   # * aliased method: process direct swap
