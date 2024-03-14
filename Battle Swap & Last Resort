@@ -268,7 +268,7 @@ class Window_BattleLog < Window_Selectable
   #--------------------------------------------------------------------------
   def display_swap(target,subject)
     add_text(sprintf(EBONY::SWAP::Log, target, subject))
-    wait if line_number > 0
+    4.times { wait }
   end
 end # Window_BattleLog
 
