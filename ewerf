@@ -1,0 +1,70 @@
+{
+    "name": "ROSA",
+    "description": "",
+    "authors": [
+        {
+            "name": "Lynx_StxrTouchVT",
+            "id": "183251375193456641"
+        }
+    ],
+    "semanticColors": {
+        "ANDROID_RIPPLE": [
+            "#53438a"
+        ],
+        "BACKGROUND_ACCENT": [
+            "#5e0f26"
+        ],
+        "BACKGROUND_MOBILE_PRIMARY": [
+            "#60142a"
+        ],
+        "BACKGROUND_MOBILE_SECONDARY": [
+            "#140508"
+        ],
+        "BACKGROUND_SECONDARY": [
+            "#140508"
+        ],
+        "BACKGROUND_SECONDARY_ALT": [
+            "#300914"
+        ],
+        "BACKGROUND_MODIFIER_ACTIVE": [
+            "#28020e"
+        ],
+        "BACKGROUND_MODIFIER_ACCENT": [
+            "#280211"
+        ],
+        "REDESIGN_BUTTON_SECONDARY_BACKGROUND": [
+            "#99395c"
+        ],
+        "REDESIGN_BUTTON_TERTIARY_BACKGROUND": [
+            "#3a131e"
+        ],
+        "REDESIGN_INPUT_CONTROL_ACTIVE_BG": [
+            "#3b1320"
+        ],
+        "REDESIGN_INPUT_CONTROL_SELECTED": [
+            "#5909c4"
+        ],
+        "BG_BASE_TERTIARY": [
+            "#280211"
+        ],
+        "BACKGROUND_FLOATING": [
+            "#33141e"
+        ],
+        "BG_MOD_STRONG": [
+            "#28020d"
+        ],
+        "SCROLLBAR_AUTO_THUMB": [
+            "#f697b2"
+        ],
+        "BG_BACKDROP": [
+            "#04010173"
+        ]
+    },
+    "rawColors": {
+        "TEXT_LINK": "#D793d5",
+    },
+    "plus": {
+        "version": 0,
+    },
+    "spec": 2
+}
